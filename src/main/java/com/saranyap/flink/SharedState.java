@@ -1,5 +1,8 @@
 package com.saranyap.flink;
 
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.Response;
 import org.apache.commons.collections.IteratorUtils;
 import org.apache.flink.api.common.state.ListState;
 import org.apache.flink.api.common.state.ListStateDescriptor;
@@ -13,8 +16,11 @@ import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.functions.co.CoFlatMapFunction;
 import org.apache.flink.util.Collector;
 
+import java.io.IOException;
+
 public class SharedState {
     public static void main(String[] args) throws Exception {
+
         final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
 
         DataStream<ControlData> control = env.fromElements(
@@ -49,6 +55,16 @@ public class SharedState {
 
         @Override
         public void flatMap2(Event data, Collector<String> out) throws Exception {
+
+            if(refDataState == null) {
+                String result = run("http://localhost/refdata");
+                String[] split = result.split(",");
+                for (String s : split) {
+                    refDataState.add(s);
+
+                }
+            }
+
             if(IteratorUtils.toList(refDataState.get().iterator()).contains(data.toString() ))
                 out.collect(data.toString());
         }
@@ -60,7 +76,6 @@ public class SharedState {
 
         @Override
         public void initializeState(FunctionInitializationContext functionInitializationContext) throws Exception {
-
             ListStateDescriptor<String> descriptor = new ListStateDescriptor<>(
                     // state name
                     "ref-data",
@@ -68,6 +83,19 @@ public class SharedState {
                     TypeInformation.of(new TypeHint<String>() {}));
             refDataState = functionInitializationContext.getOperatorStateStore().getListState(descriptor);
         }
+
+        String run(String url) throws IOException {
+            OkHttpClient client = new OkHttpClient();
+
+            Request request = new Request.Builder()
+                    .url(url)
+                    .build();
+
+            try (Response response = client.newCall(request).execute()) {
+                return response.body().string();
+            }
+        }
+
     }
 
 
